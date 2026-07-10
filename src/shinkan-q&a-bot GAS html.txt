@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>新歓Q&A</title>
+  <style>
+    :root {
+      --bg-chat: #ece5dd;
+      --bg-header: #ffffff;
+      --bubble-bot: #ffffff;
+      --bubble-user: #a8e08f;
+      --accent: #d98da4;
+      --text: #2b2b2b;
+      --text-sub: #8a8378;
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      color: var(--text);
+      background: var(--bg-chat);
+      display: flex; flex-direction: column;
+      max-width: 560px; margin: 0 auto;
+    }
+
+    header {
+      background: var(--bg-header);
+      padding: 12px 16px;
+      border-bottom: 2px solid var(--accent);
+      display: flex; align-items: center; gap: 10px;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--accent); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    header h1 { font-size: 16px; margin: 0; }
+    header p { font-size: 11px; margin: 0; color: var(--text-sub); }
+
+    #chat {
+      flex: 1; overflow-y: auto;
+      padding: 16px 12px 8px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .row { display: flex; }
+    .row.bot { justify-content: flex-start; }
+    .row.user { justify-content: flex-end; }
+    .bubble {
+      max-width: 78%;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 14px; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+      animation: pop .18s ease-out;
+    }
+    .bot .bubble {
+      background: var(--bubble-bot);
+      border-top-left-radius: 4px;
+      box-shadow: 0 1px 1px rgba(0,0,0,.08);
+    }
+    .user .bubble {
+      background: var(--bubble-user);
+      border-top-right-radius: 4px;
+    }
+    .system {
+      align-self: center;
+      font-size: 11px; color: var(--text-sub);
+      background: rgba(255,255,255,.6);
+      padding: 3px 12px; border-radius: 12px;
+    }
+    @keyframes pop { from { opacity: 0; transform: translateY(4px); } }
+    @media (prefers-reduced-motion: reduce) {
+      .bubble { animation: none; }
+      .dot { animation: none !important; }
+    }
+
+    .typing { display: flex; gap: 4px; padding: 4px 2px; }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #b9b2a6;
+      animation: blink 1.2s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: .2s; }
+    .dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 0 4px; }
+    .chip {
+      border: 1.5px solid var(--accent);
+      background: #fff; color: var(--text);
+      border-radius: 18px; padding: 7px 14px;
+      font-size: 13px; cursor: pointer;
+    }
+    .chip:active { background: var(--accent); color: #fff; }
+    .chip:disabled { opacity: .4; cursor: default; }
+
+    .bubble input {
+      width: 100%; padding: 9px 10px; margin: 4px 0 10px;
+      border: 1px solid #ddd6cb; border-radius: 8px; font-size: 14px;
+    }
+    .bubble .label { font-size: 12px; color: var(--text-sub); }
+    .bubble button.primary {
+      width: 100%; padding: 10px;
+      background: var(--accent); color: #fff;
+      border: none; border-radius: 10px; font-size: 14px; cursor: pointer;
+    }
+    .bubble button.primary:disabled { opacity: .5; }
+
+    #input-bar {
+      display: flex; gap: 8px; align-items: flex-end;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: var(--bg-header);
+      border-top: 1px solid #e2dcd2;
+      position: sticky; bottom: 0;
+    }
+    #question {
+      flex: 1; resize: none;
+      border: 1px solid #ddd6cb; border-radius: 18px;
+      padding: 9px 14px; font-size: 14px; line-height: 1.5;
+      font-family: inherit; max-height: 96px;
+    }
+    #question:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    #question:disabled { background: #f0ece5; }
+    #send-btn {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: none; background: var(--accent); color: #fff;
+      font-size: 17px; cursor: pointer; flex-shrink: 0;
+    }
+    #send-btn:disabled { opacity: .4; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="avatar">🌸</div>
+    <div>
+      <h1>新歓Q&A</h1>
+      <p> 新歓案内Bot</p>
+    </div>
+  </header>
+
+  <div id="chat" aria-live="polite"></div>
+
+  <div id="input-bar">
+    <textarea id="question" rows="1" placeholder="質問を入力（500文字まで）"></textarea>
+    <button id="send-btn" onclick="submitQuestion()" aria-label="送信">➤</button>
+  </div>
+
+  <script>
+    // doGet()のテンプレートから埋め込まれる（HA-1: メンテナンスモード）
+    const MAINTENANCE = '<?= maintenance ?>' === 'true';
+
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('question');
+    const sendBtn = document.getElementById('send-btn');
+    let busy = false;
+
+    // ---------- セッションID（レート制限用） ----------
+    // localStorageに保存し、同じブラウザなら同じIDを使い続ける
+    function getSessionId() {
+      try {
+        let id = localStorage.getItem('qa_session_id');
+        if (!id) {
+          id = 'sid-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+          localStorage.setItem('qa_session_id', id);
+        }
+        return id;
+      } catch (e) {
+        // プライベートモード等でlocalStorage不可の場合はページ表示中だけ有効なIDにする
+        if (!window._tempSid) {
+          window._tempSid = 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+        }
+        return window._tempSid;
+      }
+    }
+
+    // ---------- 吹き出しを組み立てる部品 ----------
+    function addRow(side, node) {
+      const row = document.createElement('div');
+      row.className = 'row ' + side;
+      row.appendChild(node);
+      chat.appendChild(row);
+      chat.scrollTop = chat.scrollHeight;
+      return row;
+    }
+    function bubble(text) {
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      if (text !== undefined) b.textContent = text;
+      return b;
+    }
+    function addBot(text) { return addRow('bot', bubble(text)); }
+    function addUser(text) { return addRow('user', bubble(text)); }
+    function addSystem(text) {
+      const s = document.createElement('div');
+      s.className = 'system';
+      s.textContent = text;
+      chat.appendChild(s);
+      chat.scrollTop = chat.scrollHeight;
+    }
+    function addTyping() {
+      const b = bubble();
+      b.innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+      return addRow('bot', b);
+    }
+
+    // ---------- 起動時: あいさつ + FAQチップ ----------
+    const FAQ_CHIPS = ['開催日はいつ？', '持ち物は？', '服装は自由？', '何時から？', '懇親会は何をする？', '申し込み方法は？'];
+
+    function showGreeting() {
+      addBot('こんにちは！新歓の案内Botです。\n新歓について気になることを、下の入力欄から気軽に質問してください。');
+      const b = bubble('よくある質問はこちらからも聞けます👇');
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+      FAQ_CHIPS.forEach(function(q) {
+        const c = document.createElement('button');
+        c.className = 'chip';
+        c.textContent = q;
+        c.onclick = function() { if (!busy) sendQuestion(q); };
+        chips.appendChild(c);
+      });
+      b.appendChild(chips);
+      addRow('bot', b);
+    }
+
+    // ---------- 受付停止（HA-1） ----------
+    function showMaintenance() {
+      addBot('現在質問の受付を一時停止中です。\n質問がある方はお手数ですが、公式LINEからお願いいたします。');
+      input.disabled = true;
+      sendBtn.disabled = true;
+      input.placeholder = '受付を停止しています';
+    }
+
+    // ---------- 質問送信の流れ ----------
+    function submitQuestion() {
+      const q = input.value.trim();
+      if (!q) return;
+      if (q.length > 500) { addSystem('質問は500文字以内で入力してください'); return; }
+      input.value = '';
+      autoGrow();
+      sendQuestion(q);
+    }
+
+    function sendQuestion(q) {
+      busy = true;
+      sendBtn.disabled = true;
+      addUser(q);
+      const typingRow = addTyping();
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          typingRow.remove();
+          onAnswer(result);
+          busy = false; sendBtn.disabled = false;
+        })
+        .withFailureHandler(function() {
+          typingRow.remove();
+          addBot('送信に失敗しました。お手数ですが公式LINEへ質問をお願いします。');
+          busy = false; sendBtn.disabled = false;
+        })
+        .handleQuestion(q, getSessionId());
+    }
+
+    function onAnswer(result) {
+      addBot(result.reply);
+      // レート制限・停止時（limited: true）はここで終了。それ以外でエスカレーションならメール確認へ
+      if (!result.limited && result.escalated) {
+        askMailPreference(result.id);
+      }
+    }
+
+    // ---------- エスカレーション: メール希望の確認 ----------
+    function askMailPreference(id) {
+      const b = bubble('メールでの回答をご希望ですか？');
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+
+      const yes = document.createElement('button');
+      yes.className = 'chip'; yes.textContent = 'はい';
+      const no = document.createElement('button');
+      no.className = 'chip'; no.textContent = 'いいえ';
+
+      yes.onclick = function() {
+        yes.disabled = true; no.disabled = true;
+        addUser('はい');
+        showMailForm(id);
+      };
+      no.onclick = function() {
+        yes.disabled = true; no.disabled = true;
+        addUser('いいえ');
+        addBot('承知しました。公式LINEでの回答をお待ちください。');
+      };
+
+      chips.appendChild(yes); chips.appendChild(no);
+      b.appendChild(chips);
+      addRow('bot', b);
+    }
+
+    // ---------- メールアドレス入力フォーム（吹き出し内） ----------
+    function showMailForm(id) {
+      const b = bubble();
+      b.innerHTML =
+        '<div class="label">メールアドレス（必須）</div>' +
+        '<input type="email" autocomplete="email">' +
+        '<div class="label">お名前（任意）</div>' +
+        '<input type="text" autocomplete="name" maxlength="50">' +
+        '<button class="primary">この内容で送信する</button>';
+      const emailInput = b.querySelectorAll('input')[0];
+      const nameInput = b.querySelectorAll('input')[1];
+      const btn = b.querySelector('button');
+
+      btn.onclick = function() {
+        const email = emailInput.value.trim();
+        const name = nameInput.value.trim();
+        if (!email || email.indexOf('@') === -1) {
+          addSystem('メールアドレスを正しく入力してください');
+          return;
+        }
+        btn.disabled = true; btn.textContent = '送信中…';
+        google.script.run
+          .withSuccessHandler(function() {
+            btn.textContent = '送信しました';
+            addBot('質問を受け付けました。後日、担当者からメールにて回答させていただきます。');
+          })
+          .withFailureHandler(function() {
+            btn.disabled = false; btn.textContent = 'この内容で送信する';
+            addBot('送信に失敗しました。お手数ですが公式LINEへ質問をお願いします。');
+          })
+          .addContactInfo(id, email, name);
+      };
+      addRow('bot', b);
+    }
+
+    // ---------- 入力欄の高さ自動調整 & Enter送信 ----------
+    function autoGrow() {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 96) + 'px';
+    }
+    input.addEventListener('input', autoGrow);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        submitQuestion();
+      }
+    });
+
+    // ---------- 起動 ----------
+    if (MAINTENANCE) {
+      showMaintenance();
+    } else {
+      showGreeting();
+    }
+  </script>
+</body>
+</html>
